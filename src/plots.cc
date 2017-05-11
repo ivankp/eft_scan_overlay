@@ -11,6 +11,8 @@
 #include <TH1.h>
 #include <TAxis.h>
 
+#include "catstr.hh"
+
 using std::cout;
 using std::cerr;
 using std::endl;
