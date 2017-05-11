@@ -4,9 +4,11 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-// #include <unordered_set>
 
 #include <boost/filesystem.hpp>
+
+#include <TCanvas.h>
+#include <TH1.h>
 
 using std::cout;
 using std::cerr;
@@ -27,7 +29,7 @@ struct hist {
     std::vector<double> vals;
   };
   std::vector<bin> bins;
-  bool filled = false;
+  unsigned ncwvals = 0;
 };
 
 int main(int argc, char* argv[]) {
@@ -95,7 +97,7 @@ int main(int argc, char* argv[]) {
             state_hist = false;
             state_bins = false;
             bin_i = 0;
-            if (!h->filled) h->filled = true;
+            ++h->ncwvals;
             continue;
           } else if (state_bins) { // read histogram bin
             // ------------------------------------------------------
@@ -104,7 +106,7 @@ int main(int argc, char* argv[]) {
             std::stringstream(line) >> xlow >> xhigh >> sumw;
 
             hist::bin *b;
-            if (h->filled) {
+            if (h->ncwvals) {
               try {
                 b = &h->bins.at(bin_i);
               } catch(...) {
@@ -142,12 +144,26 @@ int main(int argc, char* argv[]) {
     }
     // ==============================================================
 
-    for (const auto& h : hists) { // TEST
-      cout << "  " << h.first
-           << ' ' << h.second.title
-           << ' ' << h.second.bins.size() << endl;
-    }
+    // for (const auto& h : hists) { // TEST
+    //   cout << "  " << h.first
+    //        << ' ' << h.second.title
+    //        << ' ' << h.second.bins.size() << endl;
+    // }
   } // end dir loop
+
+  // make sure every histogram was seen the same number of times
+  unsigned ncwvals = 0;
+  for (const auto& h : hists) {
+    static bool first = true;
+    if (first) ncwvals = h.second.ncwvals;
+    else if (ncwvals != h.second.ncwvals) {
+      cerr <<"\033[31m"<< h.first << " filled a different number of times: "
+           << h.second.ncwvals << " instead of " << ncwvals << endl;
+      return 1;
+    }
+    first = false;
+  }
+  cout << "\nNum coeff variations: " << ncwvals <<'\n'<< endl;
 
   return 0;
 }
