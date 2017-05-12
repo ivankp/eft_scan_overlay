@@ -38,8 +38,8 @@ struct hist {
 };
 
 int main(int argc, char* argv[]) {
-  if (argc!=2) {
-    cout << "usage: " << argv[0] << " dir" << endl;
+  if (argc!=3) {
+    cout << "usage: " << argv[0] << " input_dir output.pdf" << endl;
     return 1;
   }
   std::string wc_file("param.dat"), yoda_file("Higgs.yoda");
@@ -148,12 +148,6 @@ int main(int argc, char* argv[]) {
       } // end while
     }
     // ==============================================================
-
-    // for (const auto& h : hists) { // TEST
-    //   cout << "  " << h.first
-    //        << ' ' << h.second.title
-    //        << ' ' << h.second.bins.size() << endl;
-    // }
   } // end dir loop
 
   // make sure every histogram was seen the same number of times
@@ -174,7 +168,7 @@ int main(int argc, char* argv[]) {
 
   TCanvas canv;
 
-  canv.SaveAs("plot.pdf[");
+  canv.SaveAs(cat(argv[2],'[').c_str());
   for (const auto& yh : hists) {
     const unsigned nbins = yh.second.bins.size();
     
@@ -204,9 +198,9 @@ int main(int argc, char* argv[]) {
         h.DrawCopy();
       }
     }
-    canv.SaveAs("plot.pdf");
+    canv.SaveAs(argv[2]);
   }
-  canv.SaveAs("plot.pdf]");
+  canv.SaveAs(cat(argv[2],']').c_str());
 
   return 0;
 }
