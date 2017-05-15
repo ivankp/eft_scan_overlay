@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
     cout << "usage: " << argv[0] << " input_dir output.pdf" << endl;
     return 1;
   }
-  std::string wc_file("param.dat"), yoda_file("Higgs.yoda");
+  std::string wc_file("param.dat"), yoda_file("Higgs-scaled.yoda");
 
   std::vector<std::unordered_map<std::string,double>> wc; // Wilson coeff's values
   std::unordered_map<std::string,hist> hists { // values from yoda histograms
