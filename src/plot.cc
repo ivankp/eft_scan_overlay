@@ -40,12 +40,13 @@ struct hist {
 
   void operator()(TH1* h, unsigned wci) const {
     TAxis * const ax = h->GetXaxis();
+    ax->SetLabelSize(0.055);
     const unsigned nbins = bins.size();
     for (unsigned i=0; i<nbins; ++i) {
       const unsigned bi = i+1;
       const bin& b = bins[i];
       h->SetBinContent(bi,b[wci]);
-      ax->SetBinLabel(bi,cat('[',b.xlow,',',b.xhigh,']').c_str());
+      ax->SetBinLabel(bi,cat('[',b.xlow,',',b.xhigh,')').c_str());
     }
   }
 };
@@ -239,9 +240,11 @@ int main(int argc, char* argv[]) {
           if (y > ymax) ymax = y;
         }
       }
+      const bool ymin_pos = ymin > 0;
       std::tie(ymin,ymax) = std::forward_as_tuple(
         1.05556*ymin - 0.05556*ymax,
         1.05556*ymax - 0.05556*ymin);
+      if (ymin_pos && ymin < 0) ymin = 0;
 
       TH1D h(yh.first.c_str(),yh.second.title.c_str(),nbins,0,1);
       h.SetStats(false);
