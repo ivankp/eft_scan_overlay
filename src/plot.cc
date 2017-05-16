@@ -37,6 +37,17 @@ struct hist {
   std::vector<bin> bins;
   inline const auto& operator[](size_t i) const noexcept { return bins[i]; }
   unsigned ncwvals = 0;
+
+  void operator()(TH1* h, unsigned wci) const {
+    TAxis * const ax = h->GetXaxis();
+    const unsigned nbins = bins.size();
+    for (unsigned i=0; i<nbins; ++i) {
+      const unsigned bi = i+1;
+      const bin& b = bins[i];
+      h->SetBinContent(bi,b[wci]);
+      ax->SetBinLabel(bi,cat('[',b.xlow,',',b.xhigh,']').c_str());
+    }
+  }
 };
 
 struct wc_container {
@@ -207,9 +218,7 @@ int main(int argc, char* argv[]) {
         for (const auto wc: wcs[j]) title += wc.name + '=' + wc.value + ' ';
         TH1D *h = new TH1D((yh.first+':'+wcs[j].name).c_str(),title.c_str(),nbins,0,1);
         h->SetXTitle(yh.second.title.c_str());
-
-        for (unsigned i=0; i<nbins; ++i)
-          h->SetBinContent(i+1,yh.second[i][j]);
+        yh.second(h,j);
       }
     }
 
@@ -240,8 +249,7 @@ int main(int argc, char* argv[]) {
       h.GetYaxis()->SetRangeUser(ymin,ymax);
 
       for (unsigned j=0; j<ncwvals; ++j) {
-        for (unsigned i=0; i<nbins; ++i)
-          h.SetBinContent(i+1,yh.second[i][j]);
+        yh.second(&h,j);
         if (j) h.DrawCopy("same");
         else h.DrawCopy();
       }
