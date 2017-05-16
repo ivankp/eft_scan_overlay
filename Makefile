@@ -4,7 +4,7 @@ ROOT_LIBS   := $(shell root-config --libs)
 
 .PHONY: all clean
 
-NAME := eft_scan_hists
+NAME := plot
 
 all: $(NAME)
 
