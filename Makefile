@@ -4,14 +4,16 @@ ROOT_LIBS   := $(shell root-config --libs)
 
 .PHONY: all clean
 
-all: plot
+NAME := eft_scan_hists
 
-plot: src/plot.cc src/catstr.hh
+all: $(NAME)
+
+$(NAME): %: src/%.cc src/catstr.hh
 	$(CXX) -std=c++14 -Wall -O3 -flto -Isrc \
 	  $(ROOT_CFLAGS) \
 	  $(filter %.cc,$^) -o $@ \
 	  $(ROOT_LIBS) -lboost_system -lboost_filesystem
 
 clean:
-	@rm -fv plot
+	@rm -fv $(NAME)
 

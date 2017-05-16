@@ -4,9 +4,11 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <cstring>
 
 #include <boost/filesystem.hpp>
 
+#include <TFile.h>
 #include <TCanvas.h>
 #include <TH1.h>
 #include <TAxis.h>
@@ -37,14 +39,41 @@ struct hist {
   unsigned ncwvals = 0;
 };
 
+struct wc_container {
+  std::string name;
+  struct wc {
+    std::string name, value;
+    wc(std::string&& name, std::string&& value)
+    : name(std::move(name)), value(std::move(value)) { }
+  };
+  std::vector<wc> wcs;
+  wc_container(std::string&& name): name(std::move(name)), wcs() { }
+  inline auto begin() const noexcept { return wcs.begin(); }
+  inline auto   end() const noexcept { return wcs.  end(); }
+  template <typename... Args>
+  inline void emplace(Args&& ...args) {
+    wcs.emplace_back(std::forward<Args>(args)...);
+  }
+};
+
 int main(int argc, char* argv[]) {
   if (argc!=3) {
-    cout << "usage: " << argv[0] << " input_dir output.pdf" << endl;
+    cerr << "usage: " << argv[0] << " input_dir output.(pdf|root)" << endl;
     return 1;
   }
+  const char* const out_ext = strrchr(argv[2],'.')+1;
+  bool out_root = false;
+  if (!(out_ext&&((out_root = !strcmp(out_ext,"root"))||!strcmp(out_ext,"pdf")))) {
+    cout << out_ext << endl;
+    cerr << "\033[31moutput file name \"" << argv[2]
+         << "\" doesn't end with .root or .pdf\033[0m"
+         << endl;
+    return 1;
+  }
+
   std::string wc_file("param.dat"), yoda_file("Higgs-scaled.yoda");
 
-  std::vector<std::unordered_map<std::string,double>> wc; // Wilson coeff's values
+  std::vector<wc_container> wcs; // Wilson coeff's values
   std::unordered_map<std::string,hist> hists { // values from yoda histograms
     {"nJet30",{}},
     {"pT_yy",{}},
@@ -55,7 +84,8 @@ int main(int argc, char* argv[]) {
   };
   
   for (const auto& dir : directory_range(argv[1])) {
-    cout <<"\033[34;1m"<< dir.path().filename().native() <<"\033[0m"<< endl;
+    std::string dir_name = dir.path().filename().string();
+    cout <<"\033[34;1m"<< dir_name <<"\033[0m"<< endl;
     bool wc_found = false, yoda_found = false;
     for (const auto& file : directory_range(dir)) {
       std::string name = file.path().filename().string();
@@ -74,12 +104,12 @@ int main(int argc, char* argv[]) {
 
     const std::string path = dir.path().string()+'/';
     // ==============================================================
-    { // read Wilson coeffs
-      wc.emplace_back();
-      std::string name;
-      double value;
+    if (out_root) { // read Wilson coeffs
+      wcs.emplace_back(std::move(dir_name));
+      std::string name, value;
       std::ifstream f(path+wc_file);
-      while (f >> name >> value) { wc.back().emplace(std::move(name),value); }
+      while (f >> name >> value)
+        wcs.back().emplace(std::move(name),std::move(value));
     }
     { // read yoda file
       std::string line, name;
@@ -166,41 +196,59 @@ int main(int argc, char* argv[]) {
 
   // Draw ===========================================================
 
-  TCanvas canv;
+  if (out_root) { // ROOT output ------------------------------------
+    TFile fout(argv[2],"recreate");
 
-  canv.SaveAs(cat(argv[2],'[').c_str());
-  for (const auto& yh : hists) {
-    const unsigned nbins = yh.second.bins.size();
-    
-    double ymin = 1e5, ymax = -1e5;
-    for (unsigned j=0; j<ncwvals; ++j) {
-      for (unsigned i=0; i<nbins; ++i) {
-        const double y = yh.second[i][j];
-        if (y < ymin) ymin = y;
-        if (y > ymax) ymax = y;
+    for (const auto& yh : hists) {
+      const unsigned nbins = yh.second.bins.size();
+
+      for (unsigned j=0; j<ncwvals; ++j) {
+        std::string title;
+        for (const auto wc: wcs[j]) title += wc.name + '=' + wc.value + ' ';
+        TH1D *h = new TH1D((yh.first+':'+wcs[j].name).c_str(),title.c_str(),nbins,0,1);
+        h->SetXTitle(yh.second.title.c_str());
+
+        for (unsigned i=0; i<nbins; ++i)
+          h->SetBinContent(i+1,yh.second[i][j]);
       }
     }
-    std::tie(ymin,ymax) = std::forward_as_tuple(
-      1.05556*ymin - 0.05556*ymax,
-      1.05556*ymax - 0.05556*ymin);
 
-    TH1D h(yh.first.c_str(),yh.second.title.c_str(),nbins,0,1);
-    h.SetStats(false);
-    h.SetLineWidth(2);
-    // h.SetLineColor(46);
-    h.GetYaxis()->SetRangeUser(ymin,ymax);
+    fout.Write();
+    cout << "Output file: " << fout.GetName() << endl;
+  } else { // PDF output --------------------------------------------
+    TCanvas canv;
 
-    for (unsigned j=0; j<ncwvals; ++j) {
-      for (unsigned i=0; i<nbins; ++i)
-        h.SetBinContent(i+1,yh.second[i][j]);
-      if (j) h.DrawCopy("same");
-      else {
-        h.DrawCopy();
+    canv.SaveAs(cat(argv[2],'[').c_str());
+    for (const auto& yh : hists) {
+      const unsigned nbins = yh.second.bins.size();
+      
+      double ymin = 1e5, ymax = -1e5;
+      for (unsigned j=0; j<ncwvals; ++j) {
+        for (unsigned i=0; i<nbins; ++i) {
+          const double y = yh.second[i][j];
+          if (y < ymin) ymin = y;
+          if (y > ymax) ymax = y;
+        }
       }
+      std::tie(ymin,ymax) = std::forward_as_tuple(
+        1.05556*ymin - 0.05556*ymax,
+        1.05556*ymax - 0.05556*ymin);
+
+      TH1D h(yh.first.c_str(),yh.second.title.c_str(),nbins,0,1);
+      h.SetStats(false);
+      h.SetLineWidth(2);
+      h.GetYaxis()->SetRangeUser(ymin,ymax);
+
+      for (unsigned j=0; j<ncwvals; ++j) {
+        for (unsigned i=0; i<nbins; ++i)
+          h.SetBinContent(i+1,yh.second[i][j]);
+        if (j) h.DrawCopy("same");
+        else h.DrawCopy();
+      }
+      canv.SaveAs(argv[2]);
     }
-    canv.SaveAs(argv[2]);
-  }
-  canv.SaveAs(cat(argv[2],']').c_str());
+    canv.SaveAs(cat(argv[2],']').c_str());
+  } // --------------------------------------------------------------
 
   return 0;
 }
