@@ -3,8 +3,9 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <unordered_map>
+#include <map>
 #include <cstring>
+#include <algorithm>
 
 #include <boost/filesystem.hpp>
 
@@ -19,12 +20,29 @@ using std::cout;
 using std::cerr;
 using std::endl;
 
-struct directory_range {
+template <typename T>
+struct less_deref {
+  constexpr bool operator()(const T *lhs, const T *rhs) const {
+    return (*lhs) < (*rhs);
+  }
+};
+
+class directory_range {
   boost::filesystem::path p;
-  directory_range(boost::filesystem::path p): p(p) { }
   using iterator = boost::filesystem::directory_iterator;
+public:
+  directory_range(boost::filesystem::path p): p(p) { }
   inline iterator begin() const { return iterator(p); }
-  inline iterator end()   const { return iterator( ); }
+  inline iterator   end() const { return iterator( ); }
+};
+class sorted_directory_range {
+  std::vector<boost::filesystem::path> v;
+  using iterator = boost::filesystem::directory_iterator;
+public:
+  sorted_directory_range(boost::filesystem::path p)
+  : v(iterator(p), iterator()) { std::sort(v.begin(), v.end()); }
+  inline auto begin() const { return v.begin(); }
+  inline auto   end() const { return v.end  (); }
 };
 
 struct hist {
@@ -36,7 +54,7 @@ struct hist {
   };
   std::vector<bin> bins;
   inline const auto& operator[](size_t i) const noexcept { return bins[i]; }
-  unsigned ncwvals = 0;
+  unsigned n = 0, found = 0;
 
   void operator()(TH1* h, unsigned wci) const {
     TAxis * const ax = h->GetXaxis();
@@ -68,6 +86,8 @@ struct wc_container {
   }
 };
 
+template <typename T> struct bad_type;
+
 int main(int argc, char* argv[]) {
   if (argc!=3) {
     cerr << "usage: " << argv[0] << " input_dir output.(pdf|root)" << endl;
@@ -83,20 +103,27 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  std::string wc_file("param.dat"), yoda_file("Higgs-scaled.yoda");
+  const std::string wc_file("param.dat"), yoda_file("Higgs-scaled.yoda");
+  const std::vector<std::string> hists_names {
+    "N_j_30",
+    "pT_yy",
+    "pT_j1_30",
+    "m_jj_30",
+    "Dphi_j_j_30",
+    "Dphi_j_j_30_signed"
+  };
 
   std::vector<wc_container> wcs; // Wilson coeff's values
-  std::unordered_map<std::string,hist> hists { // values from yoda histograms
-    {"nJet30",{}},
-    {"pT_yy",{}},
-    {"pT_j1",{}},
-    {"m_jj",{}},
-    {"absdphi_jj",{}},
-    {"dphi_jj",{}}
-  };
-  
-  for (const auto& dir : directory_range(argv[1])) {
-    std::string dir_name = dir.path().filename().string();
+  // values from yoda histograms
+  std::map<const std::string*,hist,less_deref<std::string>> hists;
+  for (const auto& name : hists_names) {
+    hists.emplace(std::piecewise_construct,
+                  std::forward_as_tuple(&name),std::tie());
+  }
+  unsigned nwcs = 0;
+
+  for (const auto& dir : sorted_directory_range(argv[1])) {
+    std::string dir_name = dir.filename().string();
     cout <<"\033[34;1m"<< dir_name <<"\033[0m"<< endl;
     bool wc_found = false, yoda_found = false;
     for (const auto& file : directory_range(dir)) {
@@ -114,8 +141,9 @@ int main(int argc, char* argv[]) {
       continue;
     }
 
-    const std::string path = dir.path().string()+'/';
+    const std::string path = dir.string()+'/';
     // ==============================================================
+    ++nwcs;
     if (out_root) { // read Wilson coeffs
       wcs.emplace_back(std::move(dir_name));
       std::string name, value;
@@ -135,7 +163,7 @@ int main(int argc, char* argv[]) {
         if (!state_hist) {
           if (front(18)!="BEGIN YODA_HISTO1D") continue;
           name = line.substr(line.rfind('/')+1);
-          const auto it = hists.find(name);
+          const auto it = hists.find(&name);
           if (it==hists.end()) continue;
           state_hist = true;
           h = &it->second; // hist pointer
@@ -144,7 +172,8 @@ int main(int argc, char* argv[]) {
             state_hist = false;
             state_bins = false;
             bin_i = 0;
-            ++h->ncwvals;
+            ++h->n;
+            ++h->found;
             continue;
           } else if (state_bins) { // read histogram bin
             // ------------------------------------------------------
@@ -153,22 +182,22 @@ int main(int argc, char* argv[]) {
             std::stringstream(line) >> xlow >> xhigh >> sumw;
 
             hist::bin *b;
-            if (h->ncwvals) {
+            if (h->n) {
               try {
                 b = &h->bins.at(bin_i);
               } catch(...) {
                 cerr << "\033[31mnbins mismatch in " << dir
-                     << " : " << name << "\033[0m" << endl;
+                     << " : \"" << name << "\"\033[0m" << endl;
                 return 1;
               }
               if (xlow!=b->xlow) {
                 cerr << "\033[31mxlow mismatch in " << dir
-                     << " : " << name << "\033[0m" << endl;
+                     << " : \"" << name << "\"\033[0m" << endl;
                 return 1;
               }
               if (xhigh!=b->xhigh) {
                 cerr << "\033[31mxhigh mismatch in " << dir
-                     << " : " << name << "\033[0m" << endl;
+                     << " : \"" << name << "\"\033[0m" << endl;
                 return 1;
               }
             } else {
@@ -176,6 +205,11 @@ int main(int argc, char* argv[]) {
               b = &h->bins.back();
               b->xlow = xlow;
               b->xhigh = xhigh;
+            }
+            if (h->found>1) {
+              cerr << "\033[31mmultiple histograms with name \"" << name
+                   << "\" found in " << dir << "\033[0m" << endl;
+              return 1;
             }
             b->vals.push_back(sumw);
             ++bin_i;
@@ -190,36 +224,35 @@ int main(int argc, char* argv[]) {
       } // end while
     }
     // ==============================================================
+
+    for (auto& h : hists) {
+      if (!h.second.found) {
+        cerr << "\033[31mNo histograme named \"" << h.first
+             << "\" found in " << dir << "\033[0m" << endl;
+        return 1;
+      }
+      h.second.found = 0;
+    }
   } // end dir loop
 
-  // make sure every histogram was seen the same number of times
-  unsigned ncwvals = 0;
-  for (const auto& h : hists) {
-    static bool first = true;
-    if (first) ncwvals = h.second.ncwvals;
-    else if (ncwvals != h.second.ncwvals) {
-      cerr <<"\033[31m"<< h.first << " filled a different number of times: "
-           << h.second.ncwvals << " instead of " << ncwvals << endl;
-      return 1;
-    }
-    first = false;
-  }
-  cout << "\nNum coeff variations: " << ncwvals <<'\n'<< endl;
+  cout << "\nNum coeff variations: " << nwcs <<'\n'<< endl;
 
   // Draw ===========================================================
 
   if (out_root) { // ROOT output ------------------------------------
     TFile fout(argv[2],"recreate");
 
-    for (const auto& yh : hists) {
-      const unsigned nbins = yh.second.bins.size();
+    for (const auto& name : hists_names) {
+      const auto& yh = hists[&name];
+      const unsigned nbins = yh.bins.size();
 
-      for (unsigned j=0; j<ncwvals; ++j) {
+      for (unsigned ci=0; ci<nwcs; ++ci) {
         std::string title;
-        for (const auto wc: wcs[j]) title += wc.name + '=' + wc.value + ' ';
-        TH1D *h = new TH1D((yh.first+':'+wcs[j].name).c_str(),title.c_str(),nbins,0,1);
-        h->SetXTitle(yh.second.title.c_str());
-        yh.second(h,j);
+        for (const auto wc: wcs[ci]) title += wc.name + '=' + wc.value + ' ';
+        TH1D *h = new TH1D(
+          (name+':'+wcs[ci].name).c_str(),title.c_str(),nbins,0,1);
+        h->SetXTitle(yh.title.c_str());
+        yh(h,ci);
       }
     }
 
@@ -229,13 +262,14 @@ int main(int argc, char* argv[]) {
     TCanvas canv;
 
     canv.SaveAs(cat(argv[2],'[').c_str());
-    for (const auto& yh : hists) {
-      const unsigned nbins = yh.second.bins.size();
+    for (const auto& name : hists_names) {
+      const auto& yh = hists[&name];
+      const unsigned nbins = yh.bins.size();
       
       double ymin = 1e5, ymax = -1e5;
-      for (unsigned j=0; j<ncwvals; ++j) {
+      for (unsigned ci=0; ci<nwcs; ++ci) {
         for (unsigned i=0; i<nbins; ++i) {
-          const double y = yh.second[i][j];
+          const double y = yh[i][ci];
           if (y < ymin) ymin = y;
           if (y > ymax) ymax = y;
         }
@@ -246,14 +280,14 @@ int main(int argc, char* argv[]) {
         1.05556*ymax - 0.05556*ymin);
       if (ymin_pos && ymin < 0) ymin = 0;
 
-      TH1D h(yh.first.c_str(),yh.second.title.c_str(),nbins,0,1);
+      TH1D h(name.c_str(),yh.title.c_str(),nbins,0,1);
       h.SetStats(false);
       h.SetLineWidth(2);
       h.GetYaxis()->SetRangeUser(ymin,ymax);
 
-      for (unsigned j=0; j<ncwvals; ++j) {
-        yh.second(&h,j);
-        if (j) h.DrawCopy("same");
+      for (unsigned ci=0; ci<nwcs; ++ci) {
+        yh(&h,ci);
+        if (ci) h.DrawCopy("same");
         else h.DrawCopy();
       }
       canv.SaveAs(argv[2]);
