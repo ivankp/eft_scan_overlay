@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
 
     for (auto& h : hists) {
       if (!h.second.found) {
-        cerr << "\033[31mNo histograme named \"" << h.first
+        cerr << "\033[31mNo histogram named \"" << (*h.first)
              << "\" found in " << dir << "\033[0m" << endl;
         return 1;
       }
