@@ -89,8 +89,9 @@ struct wc_container {
 template <typename T> struct bad_type;
 
 int main(int argc, char* argv[]) {
-  if (argc!=3) {
-    cerr << "usage: " << argv[0] << " input_dir output.(pdf|root)" << endl;
+  if (argc<3) {
+    cerr << "usage: " << argv[0]
+         << " input_dir output.(pdf|root) [vars ...]" << endl;
     return 1;
   }
   const char* const out_ext = strrchr(argv[2],'.')+1;
@@ -104,7 +105,7 @@ int main(int argc, char* argv[]) {
   }
 
   const std::string wc_file("param.dat"), yoda_file("Higgs-scaled.yoda");
-  const std::vector<std::string> hists_names {
+  std::vector<std::string> hists_names {
     "N_j_30",
     "pT_yy",
     "pT_j1_30",
@@ -112,6 +113,15 @@ int main(int argc, char* argv[]) {
     "Dphi_j_j_30",
     "Dphi_j_j_30_signed"
   };
+  if (argc>3) {
+    hists_names.clear();
+    if (argc!=4 || strcmp(argv[3],"all"))
+      for (int i=3; i<argc; ++i) hists_names.emplace_back(argv[i]);
+    else {
+      cerr << "\'all\' mode not implemented yet" << endl;
+      return 1;
+    }
+  }
 
   std::vector<wc_container> wcs; // Wilson coeff's values
   // values from yoda histograms
@@ -124,6 +134,7 @@ int main(int argc, char* argv[]) {
 
   for (const auto& dir : sorted_directory_range(argv[1])) {
     std::string dir_name = dir.filename().string();
+    if (dir_name.front()=='.') continue;
     cout <<"\033[34;1m"<< dir_name <<"\033[0m"<< endl;
     bool wc_found = false, yoda_found = false;
     for (const auto& file : directory_range(dir)) {
