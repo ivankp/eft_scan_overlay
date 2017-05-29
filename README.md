@@ -7,6 +7,7 @@ Run `make`.
 ### Usage
 
 `./plot yoda_plots plots.pdf`
+
 `./plot yoda_plots histograms.root`
 
 The `plot` executable takes two arguments. The first one is a path (absolute or
