@@ -6,7 +6,8 @@ Run `make`.
 
 ### Usage
 
-E.g. `./plot yoda_plots plots.pdf`
+`./plot yoda_plots plots.pdf`
+`./plot yoda_plots histograms.root`
 
 The `plot` executable takes two arguments. The first one is a path (absolute or
 relative) to the directory containing subdirectories corresponding to points in
@@ -17,5 +18,4 @@ written.
 
 ### Dependensies
 
-`boost::filesystem`
-`ROOT`
+`boost::filesystem`, `ROOT`
