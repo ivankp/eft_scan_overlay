@@ -6,6 +6,7 @@
 #include <map>
 #include <cstring>
 #include <algorithm>
+#include <type_traits>
 
 #include <boost/filesystem.hpp>
 
@@ -15,6 +16,14 @@
 #include <TAxis.h>
 
 #include "catstr.hh"
+
+// because in older boost versions path::filename() returned a string
+template <typename T> auto filename(const T& path) -> std::enable_if_t<
+  std::is_convertible<decltype(path.filename()),std::string>::value,
+  std::string > { return path.filename(); }
+template <typename T> auto filename(const T& path) -> std::enable_if_t<
+  !std::is_convertible<decltype(path.filename()),std::string>::value,
+  std::string > { return path.filename().string(); }
 
 using std::cout;
 using std::cerr;
@@ -133,12 +142,12 @@ int main(int argc, char* argv[]) {
   unsigned nwcs = 0;
 
   for (const auto& dir : sorted_directory_range(argv[1])) {
-    std::string dir_name = dir.filename().string();
+    std::string dir_name = filename(dir);
     if (dir_name.front()=='.') continue;
     cout <<"\033[34;1m"<< dir_name <<"\033[0m"<< endl;
     bool wc_found = false, yoda_found = false;
     for (const auto& file : directory_range(dir)) {
-      std::string name = file.path().filename().string();
+      std::string name = filename(file.path());
       if (name==wc_file) { wc_found = true; }
       else if (name==yoda_file) { yoda_found = true; }
       if (wc_found && yoda_found) break;
@@ -276,7 +285,7 @@ int main(int argc, char* argv[]) {
     for (const auto& name : hists_names) {
       const auto& yh = hists[&name];
       const unsigned nbins = yh.bins.size();
-      
+
       double ymin = 1e5, ymax = -1e5;
       for (unsigned ci=0; ci<nwcs; ++ci) {
         for (unsigned i=0; i<nbins; ++i) {
